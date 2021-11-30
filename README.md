@@ -16,17 +16,24 @@ Output will generate a new json file with added noise.
 
 ## Noise
 
-Following errors are the noises that can be created with `python main_json.py --input=/path/to/input/`.
+There are three types of realistic errors:
 
-### Unit error
+### 1. Perception Error
 
+When an existing lesion is missed in the document.
+
+### 2. Interpretation Error
+
+When the described lesion is incorrect (incorrectly labeled).
+
+### 3. Writing Error
+
+#### 3.1. Unit Error
 ```
 cm -> mm
 mm -> cm
 ```
-
-### Ajective error
-
+#### 3.2. Adjective Error
 ```
 left -> right
 right -> left
@@ -37,5 +44,6 @@ low -> high
 partially -> fully
 fully -> partially
 big -> small
-small -> big
+small -> big  
 ```
+Following errors are the noises that can be created with `python main_json.py --input=/path/to/input/`.
