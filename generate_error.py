@@ -26,9 +26,13 @@ def can_interpretation_error(data):
 ########################################################################
 # Apply percetion (#1 error)
 ########################################################################  
-def perception_error(data, df):
+def perception_error(data, df, which_error):
+    #which_error is a list that tells if we want to apply error to both findings and impression
+    #[findings_error, impression_error]
+
     #if current label is No Finding, add a random label
     #else, remove the label
+
     current_label = data["label"]
     if "No Finding" in current_label:
         possible_label = list(set(CATEGORIES) - set(current_label))
@@ -37,17 +41,28 @@ def perception_error(data, df):
         new_label = "No Finding"
     filtered = df.loc[df["label_joined"].str.contains(new_label)]
     filtered_patients = filtered["study_id"].to_list()
-    if len(filtered_patients) == 0:
-        import pdb;pdb.set_trace()
     new_patient = random.choice(filtered_patients)
-    new_impression = filtered[filtered["study_id"] == new_patient]["impression"].item()
+    if which_error[0] == 1: #if findings error
+        new_findings = filtered[filtered["study_id"] == new_patient]["findings"].item()
+        if which_error[1] == 0:
+            new_impression = filtered[filtered["study_id"] == new_patient]["impression"].item()
+            temp_label = [1, 0]
+        else:
+            temp_label = [1, 1]
+    else: #no findings error
+        new_findings = data["findings"]
+        if which_error[1] == 1:
+            new_impression = filtered[filtered["study_id"] == new_patient]["impression"].item()
+            temp_label = [0, 1]
+        else:
+            temp_label = [0, 0]
     
-    return new_impression
+    return new_findings, new_impression, temp_label
 
 ########################################################################
 # new_interpretation error (#2 error)
 ########################################################################  
-def new_interpretation_error(data, df):
+def new_interpretation_error(data, df, which_error):
     #we must consider the label tree from chexpert labeler
     current_label = data["label"]
     exclude_label = []
@@ -66,9 +81,19 @@ def new_interpretation_error(data, df):
         new_df = new_df.loc[~df["label_joined"].str.contains(ex) & new_df["label_joined"].str.contains(new_label)]    
     filtered_patients = new_df["study_id"].to_list()
     new_patient = random.choice(filtered_patients)
-    new_impression = new_df[new_df["study_id"] == new_patient]["impression"].item()
+
+    if which_error[0] == 1: #if findings error
+        new_findings = new_df[new_df["study_id"] == new_patient]["findings"].item()
+        if which_error[1] == 0:#only findings error is applied
+            new_impression = new_df[new_df["study_id"] == new_patient]["impression"].item()
+            temp_label = [2, 0]
+    else: #no findings error
+        new_findings = data["findings"]
+        if which_error[1] == 1:
+            new_impression = new_df[new_df["study_id"] == new_patient]["impression"].item()
+            temp_label = [0, 2]
     
-    return new_impression            
+    return new_findings, new_impression, temp_label
 
 ########################################################################
 # Apply percetion (#1 error) and interpretation error (#2 error)
@@ -109,12 +134,12 @@ def number_error(sentence):
             if list_sentence[i+1] == "mm" or  list_sentence[i+1] == "cm":
                 curr_num = float(n)
                 valid_nums.append(n)
-                curr_val = np.random.choice(vals, 1, replace=True, p=probs).item()
+                curr_val = np.random.choice(vals, 1, replace=False, p=probs).item()
                 new_num1 = curr_num * curr_val
                 new_num2 = curr_num / curr_val
                 new = [new_num1, new_num2]
                 new_probs = [0.5, 0.5]
-                final_new = np.random.choice(new, 1, replace=True, p=new_probs).item()
+                final_new = np.random.choice(new, 1, replace=False, p=new_probs).item()
                 str_final_new = str(final_new)
                 if len(str_final_new) > 7:
                     final_new = round(final_new)
@@ -222,7 +247,7 @@ def can_writing_error(sentence):
             probs = [0.5, 0.5]
         else:
             probs = [0.35, 0.35, 0.3]
-        choice_dict = np.random.choice(possible_error, 1, replace=True, p=probs)
+        choice_dict = np.random.choice(possible_error, 1, replace=False, p=probs)
         
         return choice_dict[0]
     
@@ -376,15 +401,15 @@ def match_nums_date(sentence, error_sentence):
                 
     return final_sentence
 
+
 ########################################################################
-# where it actually generates errors
+# get the type of error that we can/want to apply
 ########################################################################  
-def error(df, data):
-#     import pdb;pdb.set_trace()
-    sentence = data["impression"]
+def get_type_of_error(df, data, error_location):
+    #error_location is either impression or findings
+    sentence = data[error_location]
     prob = [0.5, 0.5]
     #probability of selecting (interpretation error) vs (writing error)
-    augmented_sentences = []
     label = label_exists(data)
     types_of_error = []
     if label:#check if label exists
@@ -392,23 +417,19 @@ def error(df, data):
         df["label_joined"] = df["label"].str.join(sep=",")
         #apply perception error
         types_of_error.append("perception_error")
-#         augmented_sentences.append(perception_error(data, df))
         if (can_interpretation_error(data)):
             types_of_error.append("interpretation_error")
-#             augmented_sentences.append(new_interpretation_error(data, df))
     
     #check for writing error
     #only when the label is not "No Finding"
+    we = False
     if "No Finding" not in data["label"]:
         we = can_writing_error(sentence)
         if we:#if writing error is possible
             types_of_error.append("writing_error")
-#             augmented_sentences.append(writing_error(we, sentence))
-        
-#     import pdb;pdb.set_trace()
+
     if len(types_of_error) < 1:
-        selected_augmentation = sentence
-        error_label = 0
+        selected_error = "none"
     else:
         if len(types_of_error) == 1:
             selected_error = types_of_error[0]
@@ -419,10 +440,80 @@ def error(df, data):
                 selected_error = types_of_error[0]
             elif len(types_of_error) == 2: #only two errors were applicable
                 prob = [0.5, 0.5]
-                selected_error = np.random.choice(types_of_error, 1, prob).item()
-            # else: #all three errors were applicable
-#                 prob = [0, 0.5, 0.5]
-#             selected_error = np.random.choice(types_of_error, 1, prob).item()
+                selected_error = np.random.choice(types_of_error, 1, replace=False, p=prob).item()
+            
+    return selected_error, we
+
+########################################################################
+# apply the particular error
+########################################################################  
+def apply_error(df, data, error_type, which_error, we=None):
+    #which_error is a list that indicates if there is an error in findings, impression, or both
+    # e.g. [0, 0]
+    if error_type == "writing_error":
+        if which_error == [1, 0]:#only apply to findings
+            sentence_findings = data["findings"]
+            new_findings = writing_error(we, sentence_findings)
+            sentence_impression = data["impression"]
+            new_impression = writing_error(we, sentence_impression)
+            error_label = which_error + [3, 0]
+        else:#which error == [0, 1] only apply to impression
+            new_findings = data["findings"]
+            sentence_impression = data["impression"]
+            new_impression = writing_error(we, sentence_impression)
+            error_label = which_error + [0, 3]
+    elif error_type == "perception_error":
+        new_findings, new_impression, temp_label = perception_error(data, df, which_error)
+        error_label = which_error + temp_label
+    elif error_type == "interpretation_error":
+        new_findings, new_impression, temp_label = new_interpretation_error(data, df, which_error)
+        error_label = which_error + temp_label
+        if which_error == [0, 1]:
+            new_impression = match_nums_date(data["impression"], new_impression)
+    else:#error_type == "none"
+        new_findings = data["findings"]
+        new_impression = data["impression"]
+        error_label = which_error + [0, 0]
+
+    return new_findings, new_impression, error_label
+
+########################################################################
+# where findings error actually generates errors
+########################################################################  
+def findings_error(df, data):
+    sentence = data["findings"]
+    label = label_exists(data)
+    types_of_error = []
+    if label:#check if label exists
+        #used for perception and interpretation error
+        df["label_joined"] = df["label"].str.join(sep=",")
+        #apply perception error
+        types_of_error.append("perception_error")
+        if (can_interpretation_error(data)):
+            types_of_error.append("interpretation_error")
+
+    #check for writing error
+    #only when the label is not "No Finding"
+    if "No Finding" not in data["label"]:
+        we = can_writing_error(sentence)
+        if we:#if writing error is possible
+            types_of_error.append("writing_error")
+
+    if len(types_of_error) < 1:
+            selected_augmentation = sentence
+            error_label = 0
+    else:
+        if len(types_of_error) == 1:
+            selected_error = types_of_error[0]
+        else:
+            if "perception_error" in types_of_error:#there are too many perception error at this point
+                types_of_error.remove("perception_error")
+            if len(types_of_error) == 1:
+                selected_error = types_of_error[0]
+            elif len(types_of_error) == 2: #only two errors were applicable
+                prob = [0.5, 0.5]
+                selected_error = np.random.choice(types_of_error, 1, replace=False, p=prob).item()
+
         if selected_error == "writing_error":
             selected_augmentation = writing_error(we, sentence)
             error_label = 3
@@ -432,19 +523,29 @@ def error(df, data):
         elif selected_error == "interpretation_error":
             selected_augmentation = new_interpretation_error(data, df)
             selected_augmentation = match_nums_date(sentence, selected_augmentation)
-            error_label = 2
-            
-        
-#     #append the original sentence if no augmentation happened
-#     if len(augmented_sentences) < 1:
-#         selected_augmentation = sentence
-        
-#     elif len(augmented_sentences) == 1:
-#         selected_augmentation = augmented_sentences[0]
-#     else:
-#         if len(augmented_sentences) == 2:#only two errors were applicable
-#             prob = [0.5, 0.5]
-#         else:#all three errors were applicable
-#             prob = [0.35, 0.35, 0.3]
-#         selected_augmentation = np.random.choice(augmented_sentences, 1, prob).item()
-    return selected_augmentation, error_label
+            error_label = 2            
+
+########################################################################
+# where impression error actually generates errors
+########################################################################  
+def error(df, data):
+    prob = [0, 1]
+    possible_error = ["findings", "impression"]
+    type_ = np.random.choice(possible_error, 1, replace=False, p=prob).item()
+    if type_ == "findings":
+        type_of_error, we = get_type_of_error(df, data, type_)
+        which_error = [1, 0]
+        if type_of_error == "none":
+            which_error = [0,0]
+        new_findings, new_impression, error_label = apply_error(df, data, type_of_error, which_error, we)
+
+
+
+    elif type_ == "impression":
+        type_of_error, we = get_type_of_error(df, data, type_)
+        which_error = [0, 1]
+        if type_of_error == "none":
+            which_error = [0,0]
+        new_findings, new_impression, error_label = apply_error(df, data, type_of_error, which_error, we)
+
+    return new_findings, new_impression, error_label
