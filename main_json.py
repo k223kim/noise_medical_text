@@ -66,10 +66,17 @@ def gen_eda(input_file, output_file):
             output = {}
             output['study_id'] = data['study_id']
             output['subject_id'] = data['subject_id']
-            output['findings'] = data['findings']
+#             output["uid"] = data["uid"]
+#             output["MeSH"] = data["MeSH"]
+#             output["Problems"] = data["Problems"]
+#             output["image"] = data["image"]
+#             output["indication"] = data["indication"]
+#             output["comparison"] = data["comparison"]
+            # output['findings'] = data['findings']
             #generate error only for the impressions
 #             impression = data['impression']
-            error_impression, error_label = error(df, data)
+            error_findings, error_impression, error_label = error(df, data)
+            output['findings'] = error_findings
             output['impression'] = error_impression
             output['background'] = data['background']
             output['label'] = data['label']
