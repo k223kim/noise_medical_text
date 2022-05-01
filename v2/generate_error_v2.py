@@ -32,13 +32,13 @@ def number_error(sentence):
             new_list.append(n)
 #     print(valid_nums)
     if len(valid_nums) == 0:
-        return False
+        return []
     else:
         new_sentence = " ".join(new_list)
-        return new_sentence
+        return [new_sentence]
 
 ########################################################################
-# Is unit error applicable?
+# Apply unit error if possible. If not, return empty list
 ########################################################################  
 def unit_error(sentence):
     result = []
@@ -54,13 +54,15 @@ def unit_error(sentence):
         if key1 in sentence or key2 in sentence:
             result.append(unit_dict[i])
     if len(result) == 0:
-        return {}
+        return []
     else:
-        shuffle(result)
-        return result[0]
-
+        random.shuffle(result)
+        result = result[0]
+        regex = re.compile("(%s)" % "|".join(map(re.escape, result.keys())))
+        unit_error = regex.sub(lambda mo: result[mo.string[mo.start():mo.end()]], sentence)
+        return [unit_error]
 ########################################################################
-# Is adjective error applicable?
+# Apply adjective error if applicable. If not, return empty list
 ########################################################################  
 def adjective_error(sentence):
     result = []
@@ -96,47 +98,71 @@ def adjective_error(sentence):
         if key1 in sentence.lower() or key2 in sentence.lower():
             result.append(adjective_dict[i])
     if len(result) == 0:
-        return {}
+        return []
     else:
-        shuffle(result)
-        return result[0]        
+        random.shuffle(result)
+        l = min(len(result), 2)
+        adjective_errors = []
+        for i in range(l):
+            curr_result = result[i]
+            regex = re.compile("(%s)" % "|".join(map(re.escape, curr_result.keys())))
+            adjective_errors.append(regex.sub(lambda mo: curr_result[mo.string[mo.start():mo.end()]], sentence))
+        return adjective_errors        
 
 ########################################################################
-# Is factual error applicable?
+# Apply keyword error if applicable. IF not, return empty list
+########################################################################  
+def keyword_error(sentence):
+    result = []
+    keywords = {
+        "LUL":0,
+        "RUL":0,
+        "LLL":0,
+        "RLL":0,
+        "RML":0,
+        "LML":0
+    }
+    for key in keywords.keys():
+        if key in sentence:
+            keywords[key] += 1
+    found_keys = set(list({k:v for k,v in keywords.items() if v > 0}))
+    if len(found_keys) == 0:
+        return []
+    else:
+        other_keys = list(set(list(keywords)) - found_keys)
+        found_keys = list(found_keys)    
+        random.shuffle(found_keys)
+        l = min(len(found_keys), 2)            
+        keyword_errors = []
+
+        for i in range(l):
+            existing = found_keys[i]
+            new_keyword = random.choice(other_keys)
+            keyword_errors.append(sentence.replace(existing, new_keyword))     
+        
+        return keyword_errors
+
+
+########################################################################
+# Apply factual error
 ########################################################################   
 def factual_error(sentence):
-    #check if the impression has no significance (if the label is "no findings")
-    #e.g. No acute cardiopulmonary process.
-    
-    unit_dict = unit_error(sentence)
-    adjective_dict = adjective_error(sentence)
-    number_err = number_error(sentence)
-    
-    possible_error = []
-    if unit_dict:
-        possible_error.append(unit_dict)
-    if adjective_dict:
-        possible_error.append(adjective_dict)
-    if number_err:
-        possible_error.append(number_err)
+    #number error
+    ne = number_error(sentence)
+    #unit error
+    ue = unit_error(sentence)
+    #adjective error
+    ae = adjective_error(sentence)
+    #keyword error
+    ke = keyword_error(sentence)
 
-    if len(possible_error) == 0:
-        return False
-    elif len(possible_error) == 1:
-        return possible_error[0]
-    else:
-        if len(possible_error) == 2:
-            probs = [0.5, 0.5]
-        else:
-            probs = [0.35, 0.35, 0.3]
-        choice_dict = np.random.choice(possible_error, 1, replace=False, p=probs)
-        
-        return choice_dict[0]
+    final_factual_error = ne + ue + ae + ke
+    return final_factual_error
 
 ########################################################################
 # When interpretation error is applied, we must check for numbers and date and replace them accordingly
 ######################################################################## 
-def match_nums_date(sentence, error_sentence):
+def match_nums_date(sentence, error_sentence, ori_findings):
     #collect all info from original sentence
     ori_numbers = []
     ori_dates = []
@@ -149,7 +175,8 @@ def match_nums_date(sentence, error_sentence):
     ori_key_words = []
 
     ori_sentence = re.findall(r'(?:[a-zA-Z]+)|(?:\d+(?:\.\d+)?(?::?\d+)?)(?:\s*[a|p|c]?\.?m\.?m?)', sentence)
-    ori_dates = re.findall(r'\d{4}-\d{2}-\d{2}|\d{4}-\d{2}-\d{1}|\d{4}-\d{1}-\d{2}|\d{4}-\d{1}-\d{1}|\d{2}-\d{2}-\d{2}|\d{2}-\d{2}-\d{1}|\d{2}-\d{1}-\d{2}|\d{2}-\d{1}-\d{1}',sentence)
+    #we will maintain dates in original findings
+    ori_dates = re.findall(r'\d{4}-\d{2}-\d{2}|\d{4}-\d{2}-\d{1}|\d{4}-\d{1}-\d{2}|\d{4}-\d{1}-\d{1}|\d{2}-\d{2}-\d{2}|\d{2}-\d{2}-\d{1}|\d{2}-\d{1}-\d{2}|\d{2}-\d{1}-\d{1}',ori_findings)
     for idx, ori in enumerate(ori_sentence):
         if not ori.isalpha():
             if "cm" in ori or "mm" in ori:
@@ -256,18 +283,31 @@ def match_nums_date(sentence, error_sentence):
             np.random.shuffle(np_err_numbers)
             for idx in range(len(ori_numbers)):
                 final_sentence = final_sentence.replace(np_err_numbers[idx], ori_numbers[idx])
-
-    if len(ori_dates) > 0 and len(err_dates) > 0:
-        if len(ori_dates) >= len(err_dates):
-            np_ori_dates = np.array(ori_dates)
-            np.random.shuffle(np_ori_dates)            
-            for num in range(len(err_dates)):
-                final_sentence = final_sentence.replace(err_dates[num], np_ori_dates[num])
+    #check if there is "no change" in both sentence and error_sentence
+    lower_sentence = sentence.lower()
+    lower_error_sentence = error_sentence.lower()
+    date_change = 0
+    if len(ori_dates) > 0:
+        if "no" in lower_sentence and "change" in lower_sentence and "no" in lower_error_sentence and "change" in lower_error_sentence:
+            #do not change date
+            pass
         else:
-            np_err_dates = np.array(err_dates)
-            np.random.shuffle(np_err_dates)
-            for num in range(len(ori_dates)):
-                final_sentence = final_sentence.replace(np_err_dates[num], ori_dates[num])    
+            #change dates with 70% chance
+            date_change = random.choices([0, 1], [0.3, 0.7])[0]
+    # print(date_change)/
+
+    if date_change:    
+        if len(ori_dates) > 0 and len(err_dates) > 0:
+            if len(ori_dates) >= len(err_dates):
+                np_ori_dates = np.array(ori_dates)
+                np.random.shuffle(np_ori_dates)            
+                for num in range(len(err_dates)):
+                    final_sentence = final_sentence.replace(err_dates[num], np_ori_dates[num])
+            else:
+                np_err_dates = np.array(err_dates)
+                np.random.shuffle(np_err_dates)
+                for num in range(len(ori_dates)):
+                    final_sentence = final_sentence.replace(np_err_dates[num], ori_dates[num])    
 
     #change key words
     if len(ori_key_words) > 0 and len(err_key_words) > 0:
@@ -381,22 +421,45 @@ def match_nums_date(sentence, error_sentence):
 # calculate the distance from the current centroid to the rest of the other centroids
 ######################################################################## 
 
-def get_distance(cluster_info, current):
+def get_inner_product(cluster_info, current):
     current_centroid = cluster_info[current]
     rest_centroid = cluster_info
-    distance = np.zeros([rest_centroid.shape[0]])
+    inner_product = np.zeros([rest_centroid.shape[0]])
     for i, row in enumerate(rest_centroid):
-        distance[i] = np.sum((current_centroid - row) ** 2)
-    return distance
+        inner_product[i] = np.dot(current_centroid, row)
+    return inner_product
 
-def farthest_k_clusters(distance, k):
-    indices = np.argpartition(distance, -k)[-k:]
+def farthest_k_clusters(inner_product, k, current_cluster):
+    max_val = max(inner_product)
+    final_inner_product = np.where(inner_product > 0.8, 0, inner_product)
+    #get k+1 just in case it includes current cluster
+    indices = np.argpartition(inner_product, -k-1)[-k-1:]
+    #check if indices has current cluster
+    if current_cluster in indices:
+        indices = np.delete(indices, np.where(indices == current_cluster))
+    else:
+        indices = indices[:-1]
     return indices
     
-def closest_k_clusters(distance, k):
-    indices = np.argpartition(distance, k+1)[:k+1]
+def closest_k_clusters(inner_product, k, current_cluster):
     #we do +1 since we want to disregard the current cluster
+    indices = np.argpartition(inner_product, k+1)[:k+1]
+    #check if indices has current cluster
+    if current_cluster in indices:
+        indices = np.delete(indices, np.where(inner_product == indices))
+    else:
+        indices = indices[:-1]
     return indices
+
+def other_k_clusters(current_cluster, farthest, closest, total_num_clusters, k):
+    indices = np.array(range(total_num_clusters))
+    indices = np.delete(indices, np.where(indices == current_cluster))
+    for c in closest:
+        indices = np.delete(indices, np.where(indices == c))  
+    for f in farthest:  
+        indices = np.delete(indices, np.where(indices == f))
+    selected_indices = np.random.choice(indices, k)
+    return selected_indices    
 
 def swap_impression(index, df):
     new_clusters = df[df["cluster"] == index]["index"]
@@ -408,27 +471,45 @@ def swap_impression(index, df):
 ########################################################################
 # where impression error actually generates errors
 ########################################################################  
-def error(data, df, cluster_info, k, ori_impression):
+def error(data, df, cluster_info, k, ori_impression, ori_findings):
     #k indicates the top k closest/farthest cluster from the current cluster
     current_cluster = int(data["cluster"])
-    distance = get_distance(cluster_info, current_cluster)
+    inner_product = get_inner_product(cluster_info, current_cluster)
 
     new_impressions, error_labels = [],[]
 
-    #swap between top 5 farthest cluster
-    farthest_indices = farthest_k_clusters(distance, k)
+    ####interpretive error
+
+    #swap between top 2 farthest cluster
+    farthest_indices = farthest_k_clusters(inner_product, 2, current_cluster)
     for idx in farthest_indices:
+        assert idx != current_cluster
         new_impression = swap_impression(idx, df).item()
-        new_impression = match_nums_date(ori_impression, new_impression)
+        new_impression = match_nums_date(ori_impression, new_impression, ori_findings)
         new_impressions.append(new_impression)
         error_labels.append("2")
 
     #swap between top 5 closest cluster
-    closest_indices = closest_k_clusters(distance, k)[1:]
+    closest_indices = closest_k_clusters(inner_product, 5, current_cluster)
     for idx in closest_indices:
+        assert idx != current_cluster
         new_impression = swap_impression(idx, df).item()
-        new_impression = match_nums_date(ori_impression, new_impression)
+        new_impression = match_nums_date(ori_impression, new_impression, ori_findings)
         new_impressions.append(new_impression)
         error_labels.append("1")
-    
+
+    #swap between other clusters
+    other_indices = other_k_clusters(current_cluster, farthest_indices, closest_indices, len(inner_product), 3)
+    for idx in other_indices:
+        new_impression = swap_impression(idx, df).item()
+        new_impression = match_nums_date(ori_impression, new_impression, ori_findings)
+        new_impressions.append(new_impression)
+        error_labels.append("3")
+
+    ####factual error
+    factual_errors = factual_error(ori_impression)
+    for fe in factual_errors:
+        new_impressions.append(fe)
+        error_labels.append("4")
+
     return new_impressions, error_labels
