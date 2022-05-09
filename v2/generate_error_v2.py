@@ -421,34 +421,34 @@ def match_nums_date(sentence, error_sentence, ori_findings):
 # calculate the distance from the current centroid to the rest of the other centroids
 ######################################################################## 
 
-def get_inner_product(cluster_info, current):
+def get_distance(cluster_info, current):
     current_centroid = cluster_info[current]
     rest_centroid = cluster_info
-    inner_product = np.zeros([rest_centroid.shape[0]])
+    distance = np.zeros([rest_centroid.shape[0]])
     for i, row in enumerate(rest_centroid):
-        inner_product[i] = np.dot(current_centroid, row)
-    return inner_product
+        distance[i] = 1 - np.dot(current_centroid, row)
+    return distance
 
-def farthest_k_clusters(inner_product, k, current_cluster):
-    max_val = max(inner_product)
-    final_inner_product = np.where(inner_product > 0.8, 0, inner_product)
+def farthest_k_clusters(distance, k, current_cluster):
     #get k+1 just in case it includes current cluster
-    indices = np.argpartition(inner_product, -k-1)[-k-1:]
+    indices = np.argpartition(distance, -k-1)[-k-1:]
     #check if indices has current cluster
     if current_cluster in indices:
         indices = np.delete(indices, np.where(indices == current_cluster))
     else:
-        indices = indices[:-1]
+        indices = indices[1:]
     return indices
     
-def closest_k_clusters(inner_product, k, current_cluster):
+def closest_k_clusters(distance, k, current_cluster):
     #we do +1 since we want to disregard the current cluster
-    indices = np.argpartition(inner_product, k+1)[:k+1]
+    max_val = max(distance)
+    temp_distance = np.where(distance <= 0.2, max_val, distance)
+    indices = np.argpartition(temp_distance, k+1)[:k+1]
     #check if indices has current cluster
     if current_cluster in indices:
-        indices = np.delete(indices, np.where(inner_product == indices))
+        indices = np.delete(indices, np.where(indices == current_cluster))
     else:
-        indices = indices[:-1]
+        indices = indices[1:]
     return indices
 
 def other_k_clusters(current_cluster, farthest, closest, total_num_clusters, k):
@@ -474,42 +474,46 @@ def swap_impression(index, df):
 def error(data, df, cluster_info, k, ori_impression, ori_findings):
     #k indicates the top k closest/farthest cluster from the current cluster
     current_cluster = int(data["cluster"])
-    inner_product = get_inner_product(cluster_info, current_cluster)
+    distance = get_distance(cluster_info, current_cluster)
 
-    new_impressions, error_labels = [],[]
+    new_impressions, error_labels, error_clusters = [],[], []
 
     ####interpretive error
 
     #swap between top 2 farthest cluster
-    farthest_indices = farthest_k_clusters(inner_product, 2, current_cluster)
+    farthest_indices = farthest_k_clusters(distance, 2, current_cluster)
     for idx in farthest_indices:
         assert idx != current_cluster
         new_impression = swap_impression(idx, df).item()
         new_impression = match_nums_date(ori_impression, new_impression, ori_findings)
         new_impressions.append(new_impression)
         error_labels.append("2")
+        error_clusters.append(str(idx))
 
     #swap between top 5 closest cluster
-    closest_indices = closest_k_clusters(inner_product, 5, current_cluster)
+    closest_indices = closest_k_clusters(distance, 5, current_cluster)
     for idx in closest_indices:
         assert idx != current_cluster
         new_impression = swap_impression(idx, df).item()
         new_impression = match_nums_date(ori_impression, new_impression, ori_findings)
         new_impressions.append(new_impression)
         error_labels.append("1")
+        error_clusters.append(str(idx))
 
     #swap between other clusters
-    other_indices = other_k_clusters(current_cluster, farthest_indices, closest_indices, len(inner_product), 3)
+    other_indices = other_k_clusters(current_cluster, farthest_indices, closest_indices, len(distance), 3)
     for idx in other_indices:
         new_impression = swap_impression(idx, df).item()
         new_impression = match_nums_date(ori_impression, new_impression, ori_findings)
         new_impressions.append(new_impression)
         error_labels.append("3")
+        error_clusters.append(str(idx))
 
     ####factual error
     factual_errors = factual_error(ori_impression)
     for fe in factual_errors:
         new_impressions.append(fe)
         error_labels.append("4")
+        error_clusters.append(str(current_cluster))
 
-    return new_impressions, error_labels
+    return new_impressions, error_labels, error_clusters
