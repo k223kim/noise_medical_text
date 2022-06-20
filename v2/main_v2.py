@@ -28,14 +28,17 @@ def gen_eda(input_file, output_file, cluster_path, error_type, K):
         total_output = []
         with open(input_file) as f:
             total_data = [json.loads(line) for line in f]
+        total_data = total_data[:115299]#for train set v.2.1
         df = pd.read_json(path_or_buf=input_file, lines=True)
+        df = df.loc[:115298]#for train set v.2.1
         df["index"] = list(range(len(total_data)))
-        df["cluster"] = labels
+        df["cluster"] = labels[:115299]#for train set v.2.1
         if error_type:
             random_list = random_error(len(total_data))#used when generating random error
 
         for i, data in enumerate(tqdm(total_data)):
             # if i > 10:
+            #     import pdb;pdb.set_trace()
             #     break
             output = {}
             output['index'] = str(i)
@@ -56,7 +59,7 @@ def gen_eda(input_file, output_file, cluster_path, error_type, K):
 
             if error_type:
                 output['error_label'] = "random"
-
+            
             if not error_type:
                 assert len(error_impressions) != K
                 current_output = output
@@ -73,7 +76,7 @@ def gen_eda(input_file, output_file, cluster_path, error_type, K):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--input", type=str, help="input file of unaugmented data")
-    parser.add_argument("--cluster", default="/home/kaeunkim/noise_medical_text/dataset/KMeans1000_128k_i.pickle", type=str, help="path to cluster pickle file")
+    parser.add_argument("--cluster", default="/home/fr2zyroom/kaeunkim/noise_medical_text/dataset/KMeans500_SentTrans.pickle", type=str, help="path to cluster pickle file")
     parser.add_argument("--output", type=str, help="output file of unaugmented data")
     parser.add_argument("--random", type=bool, default=False, help="True if we want randomly generated error")
     parser.add_argument("--K", type=int, default=5, help="number of closest/farthest clusters we want")

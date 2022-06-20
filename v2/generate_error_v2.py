@@ -42,25 +42,25 @@ def number_error(sentence):
 ########################################################################  
 def unit_error(sentence):
     result = []
-    unit_dict = {
-        "cm_mm" : {
-            "cm" : "mm",
-            "mm" : "cm"      
-        }
-    }    
-    for i in unit_dict.keys():
-        key_ = i.split("_")
-        key1, key2 = key_[0], key_[1]
-        if key1 in sentence or key2 in sentence:
-            result.append(unit_dict[i])
+    unit = re.findall(r'(?:\d+(?:\.\d+)?(?::?\d+)?)(?:\s*[a|p|c]?\.?m\.?m?)', sentence)
+    for i in unit:
+        if "cm" in i or "mm" in i:
+            result.append(i)
     if len(result) == 0:
         return []
     else:
         random.shuffle(result)
-        result = result[0]
-        regex = re.compile("(%s)" % "|".join(map(re.escape, result.keys())))
-        unit_error = regex.sub(lambda mo: result[mo.string[mo.start():mo.end()]], sentence)
-        return [unit_error]
+        final_result = []
+        for r in result:
+            if "mm" in r:
+                new_r = r.replace("mm", "cm")
+            if "cm" in r:
+                new_r = r.replace("cm", "mm")
+            final_result.append(new_r)
+        new_sentence = sentence
+        for i in range(len(result)):
+            new_sentence = new_sentence.replace(result[i], final_result[i])
+        return [new_sentence]
 ########################################################################
 # Apply adjective error if applicable. If not, return empty list
 ########################################################################  
@@ -90,6 +90,12 @@ def adjective_error(sentence):
             "small" : "big",
             "Big" : "Small",
             "Small" : "Big"        
+        },
+        "lt_rt" : {
+            "lt" : "rt",
+            "rt" : "lt",
+            "Rt" : "Lt",
+            "Lt" : "Rt",
         }
     }
     for i in adjective_dict.keys():
@@ -120,7 +126,7 @@ def keyword_error(sentence):
         "LLL":0,
         "RLL":0,
         "RML":0,
-        "LML":0
+        "LML":0,
     }
     for key in keywords.keys():
         if key in sentence:
@@ -155,7 +161,6 @@ def factual_error(sentence):
     ae = adjective_error(sentence)
     #keyword error
     ke = keyword_error(sentence)
-
     final_factual_error = ne + ue + ae + ke
     return final_factual_error
 
@@ -173,6 +178,8 @@ def match_nums_date(sentence, error_sentence, ori_findings):
     ori_high = []
     ori_low = []
     ori_key_words = []
+    ori_lt = []
+    ori_rt = []
 
     ori_sentence = re.findall(r'(?:[a-zA-Z]+)|(?:\d+(?:\.\d+)?(?::?\d+)?)(?:\s*[a|p|c]?\.?m\.?m?)', sentence)
     #we will maintain dates in original findings
@@ -194,6 +201,10 @@ def match_nums_date(sentence, error_sentence, ori_findings):
             ori_high.append(ori)
         elif ori_sentence[idx] == "low" or ori_sentence[idx] == "Low":
             ori_low.append(ori)
+        elif ori_sentence[idx] == "Lt" or ori_sentence[idx] == "lt":
+            ori_lt.append(ori)
+        elif ori_sentence[idx] == "Rt" or ori_sentence[idx] == "rt":
+            ori_rt.append(ori)            
         elif ori_sentence[idx] == "LUL" or ori_sentence[idx] == "RUL" or ori_sentence[idx] == "LLL" or ori_sentence[idx] == "RLL" or ori_sentence[idx] == "RML" or ori_sentence[idx] == "LML":
             ori_key_words.append(ori)
 
@@ -207,6 +218,8 @@ def match_nums_date(sentence, error_sentence, ori_findings):
     err_high = [] 
     err_low = []
     err_key_words = []
+    err_lt = []
+    err_rt = []
 
     err_sentence = re.findall(r'(?:[a-zA-Z]+)|(?:\d+(?:\.\d+)?(?::?\d+)?)(?:\s*[a|p|c]?\.?m\.?m?)', error_sentence)
     err_dates = re.findall(r'\d{4}-\d{2}-\d{2}|\d{4}-\d{2}-\d{1}|\d{4}-\d{1}-\d{2}|\d{4}-\d{1}-\d{1}|\d{2}-\d{2}-\d{2}|\d{2}-\d{2}-\d{1}|\d{2}-\d{1}-\d{2}|\d{2}-\d{1}-\d{1}',error_sentence)
@@ -226,6 +239,10 @@ def match_nums_date(sentence, error_sentence, ori_findings):
             err_high.append(err)
         elif err_sentence[idx] == "low" or err_sentence[idx] == "Low":
             err_low.append(err)
+        elif err_sentence[idx] == "Lt" or err_sentence[idx] == "lt":
+            err_lt.append(err)
+        elif err_sentence[idx] == "Rt" or err_sentence[idx] == "rt":
+            err_rt.append(err)                  
         elif err_sentence[idx] == "LUL" or err_sentence[idx] == "RUL" or err_sentence[idx] == "LLL" or err_sentence[idx] == "RLL" or err_sentence[idx] == "RML" or err_sentence[idx] == "LML":
             err_key_words.append(err)
 
@@ -245,6 +262,19 @@ def match_nums_date(sentence, error_sentence, ori_findings):
                 final_sentence = final_sentence.replace(err, "Right")
             else:
                 final_sentence = final_sentence.replace(err, "right")
+
+    if len(ori_lt) > 0 and len(ori_rt) == 0 and len(err_rt) > 0:
+        for err in err_rt:
+            if err == "Rt":
+                final_sentence = final_sentence.replace(err, "Lt")
+            else:
+                final_sentence = final_sentence.replace(err, "lt")
+    elif len(ori_rt) > 0 and len(ori_lt) == 0 and len(err_lt) > 0:
+        for err in err_lt:
+            if err == "Lt":
+                final_sentence = final_sentence.replace(err, "Rt")
+            else:
+                final_sentence = final_sentence.replace(err, "rt")
 
     if len(ori_upper) > 0 and len(ori_lower) == 0 and len(err_lower) > 0:
         for err in err_lower:
@@ -292,7 +322,7 @@ def match_nums_date(sentence, error_sentence, ori_findings):
             #do not change date
             pass
         else:
-            #change dates with 70% chance
+            #change dates with 70% chance (so that original dates remain the same)
             date_change = random.choices([0, 1], [0.3, 0.7])[0]
     # print(date_change)/
 
